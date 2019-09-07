@@ -53,6 +53,7 @@ func main() {
 		err := templates.ExecuteTemplate(w, "index.html", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -62,11 +63,13 @@ func main() {
 		results, err := search(qs)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		encoder := json.NewEncoder(w)
 		err = encoder.Encode(results)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -78,12 +81,20 @@ func main() {
 		if err != nil {
 			log.Println("/books/add qs = ", qs, " error while finding ", " error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if book.BookData.Title == "" {
+			log.Println("/books/add qs = ", qs, " This book is not popular")
+			http.Error(w, "This book is not popular", http.StatusNoContent)
+			return
 		}
 
 		err = db.Ping()
 		if err != nil {
 			log.Println("/books/add qs = ", qs, " DB not connected")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		_, err = db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
@@ -91,6 +102,7 @@ func main() {
 		if err != nil {
 			log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		log.Println("/books/add qs = ", qs, " successfully inserted into db")
@@ -99,6 +111,7 @@ func main() {
 		err = encoder.Encode(book)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -111,6 +124,8 @@ func search(query string) (results []SearchResult, err error) {
 	var csr ClassifySearchResponse
 
 	searchURL = searchURL + url.QueryEscape(query)
+
+	log.Println("func search ::url = ", searchURL)
 
 	body, err = classifyAPI(searchURL)
 	if err != nil {
@@ -134,17 +149,23 @@ func find(id string) (cbr ClassifyBookResponse, err error) {
 
 	searchURL = searchURL + url.QueryEscape(id)
 
+	log.Println("func find ::url = ", searchURL)
+
 	body, err = classifyAPI(searchURL)
 	if err != nil {
 		log.Println("func find :: err while requesting ", "url = ", searchURL, " error = ", err.Error())
 		return
 	}
 
+	//log.Println("func find ::url = ", searchURL, " obtained body body = ", string(body))
+
 	err = xml.Unmarshal(body, &cbr)
 	if err != nil {
 		log.Println("func find :: err while Unmarshalling ", "url = ", searchURL, " error = ", err.Error())
 		return
 	}
+
+	log.Println("func find ::url = ", searchURL, " successfully unmarshalled cbr = ", cbr)
 
 	return
 }
