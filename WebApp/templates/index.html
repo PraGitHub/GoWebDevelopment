@@ -2,7 +2,7 @@
 
     <head>
         <title>
-            Go Web Development
+            Search Books
         </title>
         <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
         <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.0/css/all.css" integrity="sha384-lZN37f5QGtY3VHgisS14W3ExzMWZxybE1SJSEsQp9S+oqd12jhcu+A56Ebc1zFSJ" crossorigin="anonymous">
@@ -14,9 +14,10 @@
     <body>
         <nav class="navbar navbar-dark bg-dark">
             <a class="navbar-brand" href="#">
-                <img src="http://i.stack.imgur.com/2mWEC.png" width="30" height="30" class="d-inline-block align-top"
-                    alt="">
-                Go Web Development
+                <span class="mr-sm-2">
+                    <i class="fas fa-book-reader"></i>
+                </span>
+                Search Books
             </a>
         </nav>
         <ul class="list-group">
@@ -29,18 +30,15 @@
                                     Search
                                 </span>
                             </label>
-                            <input class="form-control mr-sm-4" type="search" placeholder="Search" aria-label="Search">
-                            <button class="btn btn-success" title="Search" type="submit" onclick="return submitSearch()"><i class="fas fa-search"></i></button>
+                            <input class="form-control mr-sm-2" type="search" name="queryString" placeholder="Search" aria-label="Search">
+                            <button class="btn btn-outline-success" title="Search" type="submit" onclick="return submitSearch()">
+                                Search
+                            </button>
                         </form>
                     </li>
                     <table class="table table-hover table-bordered table-dark">
                         <thead id="table-head">
-                            <tr>
-                                <th scope="col">Title</th>
-                                <th scope="col">Author</th>
-                                <th scope="col">Year</th>
-                                <th scope="col">Date</th>
-                            </tr>
+                            
                         </thead>
                         <tbody id="search-results">
                     
@@ -57,16 +55,47 @@
                     method: "POST",
                     data: $("#search-form").serialize(),
                     success: function (rawData) {
+                        var searchResults = $("#search-results");
+                        var tableHeading = $("#table-head")
+                        searchResults.empty();
+
                         var parsed = JSON.parse(rawData);
                         if (!parsed) return;
 
-                        var searchResults = $("#search-results");
-                        searchResults.empty();
-
+                        tableHeading.append(`
+                            <tr>
+                                <th scope="col">Title</th>
+                                <th scope="col">Author</th>
+                                <th scope="col">Year</th>
+                                <th scope="col">ID</th>
+                                <th scope="col">Action</th>
+                            </tr>
+                        `)
                         parsed.forEach(function (result) {
+                            var actionForm = `
+                                <form id="${'search-form-' + result.ID}" class="form-inline" onsubmit="return false">
+                                    <input class="form-control mr-sm-2" type="text" name="id" value="${result.ID}"  hidden>
+                                    <button class="btn btn-outline-success" title="Add this book" type="submit" onclick="return addBook(${result.ID})">
+                                        <i class="fas fa-plus-square"></i>
+                                    </button>
+                                </form>
+                            `
                             var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year + "</td><td>" + result.ID + "</td></tr>");
                             searchResults.append(row);
                         });
+                    }
+                });
+                return false;
+            }
+            function addBook(id){
+                $.ajax({
+                    url: "/books/add",
+                    method: "POST",
+                    data: $("#search-form-" + id).serialize(),
+                    success: function(rawData){
+                        var parsed = JSON.parse(rawData);
+                        if (!parsed) return;
+                        
                     }
                 });
                 return false;
