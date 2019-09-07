@@ -1,0 +1,77 @@
+<html>
+
+    <head>
+        <title>
+            Go Web Development
+        </title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+        <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.0/css/all.css" integrity="sha384-lZN37f5QGtY3VHgisS14W3ExzMWZxybE1SJSEsQp9S+oqd12jhcu+A56Ebc1zFSJ" crossorigin="anonymous">
+        <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    </head>
+
+    <body>
+        <nav class="navbar navbar-dark bg-dark">
+            <a class="navbar-brand" href="#">
+                <img src="http://i.stack.imgur.com/2mWEC.png" width="30" height="30" class="d-inline-block align-top"
+                    alt="">
+                Go Web Development
+            </a>
+        </nav>
+        <ul class="list-group">
+            <li class="list-group-item">
+                <ul class="list-group">
+                    <li class="list-group-item">
+                        <form id="search-form" class="form-inline" onsubmit="return false">
+                            <label>
+                                <span class="badge badge-dark mr-sm-4">
+                                    Search
+                                </span>
+                            </label>
+                            <input class="form-control mr-sm-4" type="search" placeholder="Search" aria-label="Search">
+                            <button class="btn btn-success" title="Search" type="submit" onclick="return submitSearch()"><i class="fas fa-search"></i></button>
+                        </form>
+                    </li>
+                    <table class="table table-hover table-bordered table-dark">
+                        <thead id="table-head">
+                            <tr>
+                                <th scope="col">Title</th>
+                                <th scope="col">Author</th>
+                                <th scope="col">Year</th>
+                                <th scope="col">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="search-results">
+                    
+                        </tbody>
+                    </table>
+                </ul>
+            </li>
+        </ul>
+        <script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+        <script type="text/javascript">
+            function submitSearch() {
+                $.ajax({
+                    url: "/search",
+                    method: "POST",
+                    data: $("#search-form").serialize(),
+                    success: function (rawData) {
+                        var parsed = JSON.parse(rawData);
+                        if (!parsed) return;
+
+                        var searchResults = $("#search-results");
+                        searchResults.empty();
+
+                        parsed.forEach(function (result) {
+                            var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year + "</td><td>" + result.ID + "</td></tr>");
+                            searchResults.append(row);
+                        });
+                    }
+                });
+                return false;
+            }
+        </script>
+    </body>
+
+</html>
