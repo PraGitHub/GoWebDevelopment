@@ -12,7 +12,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
     </head>
 
-    <body>
+    <body onload="onLoadFunction()">
         <nav class="navbar navbar-dark bg-dark">
             <a class="navbar-brand" href="#">
                 <span class="mr-sm-2">
@@ -50,7 +50,13 @@
                 <ul class="list-group">
                     <table class="table table-hover table-bordered table-dark">
                         <thead id="table-head">
-                            
+                            <tr>
+                                <th scope="col">Title</th>
+                                <th scope="col">Author</th>
+                                <th scope="col">Year</th>
+                                <th scope="col">ID</th>
+                                <th scope="col">Action</th>
+                            </tr>
                         </thead>
                         <tbody id="search-results">
                     
@@ -60,6 +66,10 @@
             </li>
         </ul>
         <script type="text/javascript">
+            function onLoadFunction(){
+                $("#table-head").hide();
+            }
+
             function submitSearch() {
                 $.ajax({
                     url: "/search",
@@ -73,15 +83,8 @@
                         var parsed = JSON.parse(rawData);
                         if (!parsed) return;
 
-                        tableHeading.append(`
-                            <tr>
-                                <th scope="col">Title</th>
-                                <th scope="col">Author</th>
-                                <th scope="col">Year</th>
-                                <th scope="col">ID</th>
-                                <th scope="col">Action</th>
-                            </tr>
-                        `)
+                        $("#table-head").show();
+
                         parsed.forEach(function (result) {
                             var actionForm = `
                                 <form id="${'search-form-' + result.ID}" class="form-inline" onsubmit="return false">
@@ -98,6 +101,7 @@
                 });
                 return false;
             }
+
             function addBook(id){
                 $.ajax({
                     url: "/books/add",
