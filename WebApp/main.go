@@ -4,21 +4,29 @@ import (
 	"database/sql"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"text/template"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/negroni"
+	"github.com/yosssi/ace"
 )
 
 var port = ":8080"
 
+type Book struct {
+	PK             string
+	Title          string
+	Author         string
+	Classification string
+	ID             string
+}
+
 type Page struct {
-	Name     string
-	DBStatus bool
+	Books []Book
 }
 
 type SearchResult struct {
@@ -53,20 +61,44 @@ func verifyDBConnection(w http.ResponseWriter, r *http.Request, next http.Handle
 	} else {
 		next(w, r)
 	}
-
 }
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
 
-	templates := template.Must(template.ParseFiles("templates/index.html"))
+	template, err := ace.Load("templates/index", "", nil)
+	if err != nil {
+		log.Println("func main :: error while loading template error = ", err.Error())
+		return
+	}
 
-	db, _ = sql.Open("sqlite3", "dev.db")
+	db, err = sql.Open("sqlite3", "dev.db")
+	if err != nil {
+		log.Println("func main :: error while connecting to database error = ", err.Error())
+		return
+	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		err := templates.ExecuteTemplate(w, "index.html", nil)
+		p := Page{
+			Books: []Book{},
+		}
+
+		rows, err := db.Query("select pk, Title, Author, Classification, ID from books")
+		if err != nil {
+			log.Println("func main :: error while fetching books from database")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		for rows.Next() {
+			var b Book
+			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification, &b.ID)
+			p.Books = append(p.Books, b)
+		}
+
+		err = template.Execute(w, p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -106,7 +138,7 @@ func main() {
 			return
 		}
 
-		_, err = db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
+		result, err := db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
 			nil, book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
 		if err != nil {
 			log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
@@ -114,10 +146,23 @@ func main() {
 			return
 		}
 
-		log.Println("/books/add qs = ", qs, " successfully inserted into db")
+		pk, err := result.LastInsertId()
+		if err != nil {
+			log.Println("/books/add qs = ", qs, " error while retriving  last inserted id error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		b := Book{
+			PK:             fmt.Sprint(pk),
+			Title:          book.BookData.Title,
+			Author:         book.BookData.Author,
+			Classification: book.Classification.MostPopular,
+			ID:             book.BookData.ID,
+		}
 
 		encoder := json.NewEncoder(w)
-		err = encoder.Encode(book)
+		err = encoder.Encode(b)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

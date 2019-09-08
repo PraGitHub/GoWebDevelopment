@@ -1,0 +1,181 @@
+= doctype html
+html
+  head
+    title Search Books
+    script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"
+    script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"
+    link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous"
+    link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.0/css/all.css" integrity="sha384-lZN37f5QGtY3VHgisS14W3ExzMWZxybE1SJSEsQp9S+oqd12jhcu+A56Ebc1zFSJ" crossorigin="anonymous"
+    script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"
+    script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"
+
+    body onload="onLoadFunction()"
+      nav class="navbar navbar-dark bg-dark"
+        a class="navbar-brand" href="#"
+          span class="mr-sm-2"
+            i class="fas fa-book-reader"
+            text   Search Books
+
+      ul class="list-group"
+        li class="list-group-item"
+          div class="container"
+            div class="modal fade" id="addBookResultModal" role="dialog"
+              div class="modal-dialog"
+                div class="modal-content"
+                  div class="modal-header"
+                    h4 class="modal-title" id="addBookResultModalHead"
+                    button type="button" class="close" data-dismiss="modal" &times;
+                  div class="modal-body"
+                    a id="addBookResultModalBody"   
+                  div class="modal-footer"
+                    button type="button" class="btn btn-default" data-dismiss="modal" Close
+        
+        li
+
+        li
+          ul
+            li
+              button class="btn btn-dark" title="Search Form" type="button" onclick="toggleId('li-search-form')" Search for books
+        
+        li
+        
+        li
+          ul
+            li
+              button class="btn btn-dark" title="Collection Form" type="button" onclick="toggleId('table-collection')" Collection of books
+
+        li
+
+        li
+          ul
+            li id="li-search-form" class="list-group-item"
+              form id="search-form" class="form-inline" onsubmit="return false"
+                input class="form-control mr-sm-2" type="search" name="queryString" placeholder="Search" aria-label="Search"
+                button class="btn btn-outline-success" title="Search" type="submit" onclick="return submitSearch()" Search
+        
+        li
+
+        li                          
+          ul class="list-group"
+            table class="table table-hover table-bordered table-dark" id="table-collection"
+              thead
+                tr
+                  th scope="col" #
+                  th scope="col" Title
+                  th scope="col" Author
+                  th scope="col" Classification
+                  th scope="col" ID
+              tbody id="collection-results"
+                {{range .Books}}
+                tr
+                  td {{.PK}}
+                  td {{.Title}}
+                  td {{.Author}}
+                  td {{.Classification}}
+                  td {{.ID}}
+                {{end}}
+        
+            table class="table table-hover table-bordered table-dark" id="table-search"
+              thead
+                tr
+                  th scope="col" Title
+                  th scope="col" Author
+                  th scope="col" Year
+                  th scope="col" ID
+                  th scope="col" Action
+              tbody id="search-results"
+
+      script type="text/javascript" src="js/helper.js"
+      = javascript
+            function showId(id){
+                id = "#" + id;
+                $(id).show();
+            }
+
+            function hideId(id){
+                id = "#" + id;
+                $(id).hide();
+            }
+
+            function toggleId(id){
+                id = "#" + id;
+                $(id).toggle();
+            }
+
+            function onLoadFunction() {
+                idsToHide = [
+                    "table-head-search",
+                    "table-head-collection",
+                    "li-search-form",
+                    "li-collection-form",
+                    "table-collection",
+                    "table-search"
+                ];
+                idsToHide.forEach(function(id){
+                    hideId(id);
+                });
+            }
+
+            function submitSearch() {
+                $.ajax({
+                    url: "/search",
+                    method: "POST",
+                    data: $("#search-form").serialize(),
+                    success: function (rawData) {
+                        hideId("table-collection");
+                        var searchResults = $("#search-results");
+                        searchResults.empty();
+
+                        var parsed = JSON.parse(rawData);
+                        if (!parsed) return;
+
+                        showId("table-search");
+
+                        parsed.forEach(function (result) {
+                            var actionForm = `
+                            <form id="${'add-book-form' + result.ID}" class="form-inline" onsubmit="return false">
+                                <input class="form-control mr-sm-2" type="text" name="id" value="${result.ID}"  hidden>
+                                <button class="btn btn-outline-success" title="Add this book" type="submit" onclick="return addBook(${result.ID})">
+                                    <i class="fas fa-plus-square"></i>
+                                </button>
+                            </form>
+                        `
+                            var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year + "</td><td>" + result.ID + "</td><td>" + actionForm + "</td></tr>");
+                            searchResults.append(row);
+                        });
+                    }
+                });
+                return false;
+            }
+
+            function addBook(id) {
+                $.ajax({
+                    url: "/books/add",
+                    method: "POST",
+                    data: $("#add-book-form" + id).serialize(),
+                    success: function (rawData) {
+                        hideId("table-search");
+                        if(rawData){
+                            var parsed = JSON.parse(rawData);
+                            if (parsed && parsed.Title) {
+                                var collectionResults =  $("#collection-results");
+                                var row = $("<tr><td>" + parsed.PK + "</td><td>" + parsed.Title + "</td><td>" + parsed.Author + "</td><td>" + parsed.Classification + "</td><td>" + parsed.ID + "</td></tr>");
+                                collectionResults.append(row);
+                                $('#addBookResultModalHead').html(`Success <i class="far fa-smile"></i>`);
+                                $('#addBookResultModalBody').text(`${parsed.Title} has been added to database`);
+                                $('#addBookResultModal').modal('show');
+                                showId("table-collection");
+                                return false;
+                            }
+                        }
+                        $('#addBookResultModalHead').html(`Sorry <i class="far fa-sad-tear"></i>`);
+                        $('#addBookResultModalBody').text(`Failed to add the book you selected. It is not popular. Please try again...`);
+                        $('#addBookResultModal').modal('show');
+                        showId("table-search");
+                    }
+                });
+                return false;
+            }
+        
+    
+
