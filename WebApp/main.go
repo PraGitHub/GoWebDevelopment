@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/urfave/negroni"
 )
 
 var port = ":8080"
@@ -42,14 +43,29 @@ type ClassifyBookResponse struct {
 	} `xml:"recommandations>ddc>mostPopular"`
 }
 
+var db *sql.DB
+
+func verifyDBConnection(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	err := db.Ping()
+	if err != nil {
+		log.Println("verifyDBConnection :: DB not connected")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		next(w, r)
+	}
+
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
 
 	templates := template.Must(template.ParseFiles("templates/index.html"))
 
-	db, _ := sql.Open("sqlite3", "dev.db")
+	db, _ = sql.Open("sqlite3", "dev.db")
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		err := templates.ExecuteTemplate(w, "index.html", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -57,7 +73,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.FormValue("queryString")
 		log.Println("/search => qs = ", qs)
 		results, err := search(qs)
@@ -73,7 +89,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/books/add", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/books/add", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.FormValue("id")
 		log.Println("/book/add => qs = ", qs)
 
@@ -87,13 +103,6 @@ func main() {
 		if book.BookData.Title == "" {
 			log.Println("/books/add qs = ", qs, " This book is not popular")
 			http.Error(w, "This book is not popular", http.StatusNoContent)
-			return
-		}
-
-		err = db.Ping()
-		if err != nil {
-			log.Println("/books/add qs = ", qs, " DB not connected")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -115,7 +124,10 @@ func main() {
 		}
 	})
 
-	log.Println(http.ListenAndServe(port, nil))
+	n := negroni.Classic()
+	n.Use(negroni.HandlerFunc(verifyDBConnection))
+	n.UseHandler(mux)
+	n.Run(port)
 }
 
 func search(query string) (results []SearchResult, err error) {
