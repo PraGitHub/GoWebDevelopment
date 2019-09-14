@@ -4,26 +4,27 @@ import (
 	"database/sql"
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	gmux "github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/negroni"
 	"github.com/yosssi/ace"
+	"gopkg.in/gorp.v1"
 )
 
 var port = ":8080"
 
 type Book struct {
-	PK             string
-	Title          string
-	Author         string
-	Classification string
-	ID             string
+	PK             int64  `db:"pk"`
+	Title          string `db:"title"`
+	Author         string `db:"author"`
+	Classification string `db:"classification"`
+	ID             string `db:"id"`
 }
 
 type Page struct {
@@ -53,6 +54,26 @@ type ClassifyBookResponse struct {
 }
 
 var db *sql.DB
+var dbMap *gorp.DbMap
+
+func initDB() (err error) {
+	db, err = sql.Open("sqlite3", "dev.db")
+	if err != nil {
+		return err
+	}
+
+	dbMap = &gorp.DbMap{
+		Db:      db,
+		Dialect: gorp.SqliteDialect{},
+	}
+
+	dbMap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
+	err = dbMap.CreateTablesIfNotExists()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 func verifyDBConnection(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	err := db.Ping()
@@ -73,9 +94,9 @@ func main() {
 		return
 	}
 
-	db, err = sql.Open("sqlite3", "dev.db")
+	err = initDB()
 	if err != nil {
-		log.Println("func main :: error while connecting to database error = ", err.Error())
+		log.Println("func main :: error from initDB() error = ", err.Error())
 		return
 	}
 
@@ -87,17 +108,11 @@ func main() {
 			Books: []Book{},
 		}
 
-		rows, err := db.Query("select pk, Title, Author, Classification, ID from books")
+		_, err := dbMap.Select(&p.Books, "select * from books")
 		if err != nil {
 			log.Println("func main :: error while fetching books from database")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-
-		for rows.Next() {
-			var b Book
-			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification, &b.ID)
-			p.Books = append(p.Books, b)
 		}
 
 		err = template.Execute(w, p)
@@ -140,27 +155,19 @@ func main() {
 			return
 		}
 
-		result, err := db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
-			nil, book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
-		if err != nil {
-			log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		pk, err := result.LastInsertId()
-		if err != nil {
-			log.Println("/books/add qs = ", qs, " error while retriving  last inserted id error = ", err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 		b := Book{
-			PK:             fmt.Sprint(pk),
+			PK:             -1,
 			Title:          book.BookData.Title,
 			Author:         book.BookData.Author,
 			Classification: book.Classification.MostPopular,
 			ID:             book.BookData.ID,
+		}
+
+		err = dbMap.Insert(&b)
+		if err != nil {
+			log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		encoder := json.NewEncoder(w)
@@ -175,7 +182,14 @@ func main() {
 		pk := gmux.Vars(r)["pk"]
 		log.Println("/books/delete => pk = ", pk)
 
-		_, err := db.Exec("delete from books where pk = ?", pk)
+		pkInt64, err := strconv.ParseInt(pk, 10, 64)
+		if err != nil {
+			log.Println("/books/delete pk = ", pk, " Error while parsing pk, error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		_, err = dbMap.Delete(&Book{pkInt64, "", "", "", ""})
 		if err != nil {
 			log.Println("/boks/delete pk = ", pk, " Error while deleting the book, error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
