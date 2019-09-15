@@ -176,20 +176,25 @@ html
                         hideId("table-search");
                         if(rawData){
                             var parsed = JSON.parse(rawData);
-                            if (parsed && parsed.Title) {
+                            if (parsed && parsed.Update) {
                                 var collectionResults =  $("#collection-results");
                                 var deleteButton = `
-                                  <button class="btn btn-outline-danger" title="Delete this book" type="button" onclick="return deleteBook(${parsed.PK})">
+                                  <button class="btn btn-outline-danger" title="Delete this book" type="button" onclick="return deleteBook(${parsed.Book.PK})">
                                     <i class="fas fa-trash-alt"></i>
                                   </button>
                                 `
-                                var row = $("<tr id=\"table-row-" + parsed.PK + "\"><td>" + parsed.PK + "</td><td>" + parsed.Title + "</td><td>" + parsed.Author + "</td><td>" + parsed.Classification + "</td><td>" + parsed.ID + "</td><td>" + deleteButton + "</td></tr>");
+                                var row = $("<tr id=\"table-row-" + parsed.Book.PK + "\"><td>" + parsed.Book.PK + "</td><td>" + parsed.Book.Title + "</td><td>" + parsed.Book.Author + "</td><td>" + parsed.Book.Classification + "</td><td>" + parsed.Book.ID + "</td><td>" + deleteButton + "</td></tr>");
                                 collectionResults.append(row);
                                 $('#addBookResultModalHead').html(`Success <i class="far fa-smile"></i>`);
-                                $('#addBookResultModalBody').text(`${parsed.Title} has been added to database`);
+                                $('#addBookResultModalBody').text(`${parsed.Book.Title} has been added to database`);
                                 $('#addBookResultModal').modal('show');
                                 showId("table-collection");
                                 return false;
+                            }else if(parsed && !parsed.Update){
+                              $('#addBookResultModalHead').html(`Hello <i class="far fa-smile-beam"></i>`);
+                              $('#addBookResultModalBody').text(`The book you have selected is already a part of your collection`);
+                              $('#addBookResultModal').modal('show');
+                              showId("table-search");
                             }
                         }
                         $('#addBookResultModalHead').html(`Sorry <i class="far fa-sad-tear"></i>`);

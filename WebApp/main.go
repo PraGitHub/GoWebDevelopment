@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/GoIncremental/negroni-sessions/cookiestore"
 	"github.com/goincremental/negroni-sessions"
@@ -33,6 +35,7 @@ type Book struct {
 type User struct {
 	Username string `db:"username"`
 	Secret   []byte `db:"secret"`
+	Books    string `db:"books"`
 }
 
 type Page struct {
@@ -62,6 +65,11 @@ type ClassifyBookResponse struct {
 	} `xml:"recommandations>ddc>mostPopular"`
 }
 
+type UpdateBook struct {
+	Book   Book
+	Update bool
+}
+
 type LoginPage struct {
 	Error string
 }
@@ -88,6 +96,24 @@ func initDB() (err error) {
 	}
 
 	return nil
+}
+
+func getUserBookMap(books string) (mapBooks map[int64]bool) {
+	strBooks := strings.Split(books, ",")
+	mapBooks = make(map[int64]bool)
+	for _, book := range strBooks {
+		pk, _ := strconv.ParseInt(book, 10, 64)
+		mapBooks[pk] = true
+	}
+	return
+}
+
+func getUserBooksFromMap(mapBooks map[int64]bool) (books string) {
+	books = ""
+	for pk := range mapBooks {
+		books = books + fmt.Sprint(pk) + ","
+	}
+	return
 }
 
 func getStringFromSession(r *http.Request, key string) (value string) {
@@ -191,6 +217,7 @@ func main() {
 				user := User{
 					Username: username,
 					Secret:   secret,
+					Books:    "",
 				}
 				err = dbMap.Insert(&user)
 				if err != nil {
@@ -266,37 +293,85 @@ func main() {
 	mux.HandleFunc("/books/{id}", func(w http.ResponseWriter, r *http.Request) {
 		qs := gmux.Vars(r)["id"]
 		log.Println("/books/add => qs = ", qs)
+		var userBook Book
+		var user *User
+		var ub UpdateBook
+		ub.Update = false
 
-		book, err := find(qs)
-		if err != nil {
-			log.Println("/books/add qs = ", qs, " error while finding ", " error = ", err.Error())
+		username := getStringFromSession(r, "User")
+
+		err := dbMap.SelectOne(&userBook, "select * from books where id = ?", qs)
+		if err != nil && err != sql.ErrNoRows {
+			log.Println("/books/add id = ", qs, " error while retrieving book from database, error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if book.BookData.Title == "" {
-			log.Println("/books/add qs = ", qs, " This book is not popular")
-			http.Error(w, "This book is not popular", http.StatusNoContent)
-			return
+		if err == sql.ErrNoRows {
+			book, err := find(qs)
+			if err != nil {
+				log.Println("/books/add qs = ", qs, " error while finding ", " error = ", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			if book.BookData.Title == "" {
+				log.Println("/books/add qs = ", qs, " This book is not popular")
+				http.Error(w, "This book is not popular", http.StatusNoContent)
+				return
+			}
+
+			b := Book{
+				PK:             -1,
+				Title:          book.BookData.Title,
+				Author:         book.BookData.Author,
+				Classification: book.Classification.MostPopular,
+				ID:             book.BookData.ID,
+			}
+
+			err = dbMap.Insert(&b)
+			if err != nil {
+				log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			err = dbMap.SelectOne(&userBook, "select * from books where id = ?", qs)
+			if err != nil {
+				log.Println("/books/add id = ", qs, " error while retrieving books from database, error = ", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
-		b := Book{
-			PK:             -1,
-			Title:          book.BookData.Title,
-			Author:         book.BookData.Author,
-			Classification: book.Classification.MostPopular,
-			ID:             book.BookData.ID,
-		}
-
-		err = dbMap.Insert(&b)
+		userInterface, err := dbMap.Get(User{}, username)
 		if err != nil {
-			log.Println("/books/add qs = ", qs, " error while inserting into DB error = ", err.Error())
+			log.Println("/books/add id = ", qs, " error while retrieving user from database, error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		if userInterface == nil {
+			log.Println("/books/add id = ", qs, " error while retrieving user from database, userInterface is nil")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		user = userInterface.(*User)
+		_, present := getUserBookMap(user.Books)[userBook.PK]
+		if !present {
+			user.Books = user.Books + fmt.Sprint(userBook.PK) + ","
+			_, err = dbMap.Update(&user)
+			if err != nil {
+				log.Println("/books/add id = ", qs, " error while updating user table, error = ", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			ub.Book = userBook
+			ub.Update = true
 		}
 
 		encoder := json.NewEncoder(w)
-		err = encoder.Encode(b)
+		err = encoder.Encode(ub)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -305,6 +380,7 @@ func main() {
 
 	mux.HandleFunc("/books/{pk}", func(w http.ResponseWriter, r *http.Request) {
 		pk := gmux.Vars(r)["pk"]
+		username := getStringFromSession(r, "User")
 		log.Println("/books/delete => pk = ", pk)
 
 		pkInt64, err := strconv.ParseInt(pk, 10, 64)
@@ -314,13 +390,35 @@ func main() {
 			return
 		}
 
-		_, err = dbMap.Delete(&Book{pkInt64, "", "", "", ""})
+		userInterface, err := dbMap.Get(User{}, username)
 		if err != nil {
-			log.Println("/boks/delete pk = ", pk, " Error while deleting the book, error = ", err.Error())
+			log.Println("/books/delete pk = ", pk, " Error while retriving user info, error = ", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+
+		if userInterface == nil {
+			log.Println("/books/delete pk = ", pk, " Error while retriving user info, error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		user := userInterface.(*User)
+		userBookMap := getUserBookMap(user.Books)
+		_, found := userBookMap[pkInt64]
+		if found {
+			delete(userBookMap, pkInt64)
+			user.Books = getUserBooksFromMap(userBookMap)
+			_, err = dbMap.Update(&user)
+			if err != nil {
+				log.Println("/books/delete pk = ", pk, " Error while updating user info, error = ", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}).Methods("DELETE")
 
 	n := negroni.Classic()
