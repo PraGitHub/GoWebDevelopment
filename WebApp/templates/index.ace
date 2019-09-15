@@ -195,6 +195,7 @@ html
                               $('#addBookResultModalBody').text(`The book you have selected is already a part of your collection`);
                               $('#addBookResultModal').modal('show');
                               showId("table-search");
+                              return false;
                             }
                         }
                         $('#addBookResultModalHead').html(`Sorry <i class="far fa-sad-tear"></i>`);

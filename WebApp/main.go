@@ -98,12 +98,22 @@ func initDB() (err error) {
 	return nil
 }
 
+func getStringFromSession(r *http.Request, key string) (value string) {
+	val := sessions.GetSession(r).Get(key)
+	if val != nil {
+		value = val.(string)
+	}
+	return
+}
+
 func getUserBookMap(books string) (mapBooks map[int64]bool) {
 	strBooks := strings.Split(books, ",")
 	mapBooks = make(map[int64]bool)
 	for _, book := range strBooks {
-		pk, _ := strconv.ParseInt(book, 10, 64)
-		mapBooks[pk] = true
+		pk, err := strconv.ParseInt(book, 10, 64)
+		if err == nil {
+			mapBooks[pk] = true
+		}
 	}
 	return
 }
@@ -116,12 +126,27 @@ func getUserBooksFromMap(mapBooks map[int64]bool) (books string) {
 	return
 }
 
-func getStringFromSession(r *http.Request, key string) (value string) {
-	val := sessions.GetSession(r).Get(key)
-	if val != nil {
-		value = val.(string)
+func getUserBooks(username string) (obtained bool, books []Book) {
+	books = make([]Book, 0)
+	userInterface, err := dbMap.Get(User{}, username)
+	if err != nil {
+		log.Println("getUserBooks :: error = ", err.Error())
+		return false, nil
 	}
-	return
+	if userInterface == nil {
+		log.Println("getUserBooks :: userInterface is nill")
+		return false, nil
+	}
+	user := userInterface.(*User)
+	pkMap := getUserBookMap(user.Books)
+	for pk := range pkMap {
+		var b Book
+		err := dbMap.SelectOne(&b, "select * from books where pk = ?", pk)
+		if err == nil {
+			books = append(books, b)
+		}
+	}
+	return true, books
 }
 
 func destroySession(r *http.Request) {
@@ -181,9 +206,9 @@ func main() {
 			Books: []Book{},
 			User:  getStringFromSession(r, "User"),
 		}
-
-		_, err := dbMap.Select(&p.Books, "select * from books")
-		if err != nil {
+		var ok bool
+		ok, p.Books = getUserBooks(p.User)
+		if !ok {
 			log.Println("func main :: error while fetching books from database")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -360,7 +385,7 @@ func main() {
 		_, present := getUserBookMap(user.Books)[userBook.PK]
 		if !present {
 			user.Books = user.Books + fmt.Sprint(userBook.PK) + ","
-			_, err = dbMap.Update(&user)
+			_, err = dbMap.Update(user)
 			if err != nil {
 				log.Println("/books/add id = ", qs, " error while updating user table, error = ", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -409,7 +434,7 @@ func main() {
 		if found {
 			delete(userBookMap, pkInt64)
 			user.Books = getUserBooksFromMap(userBookMap)
-			_, err = dbMap.Update(&user)
+			_, err = dbMap.Update(user)
 			if err != nil {
 				log.Println("/books/delete pk = ", pk, " Error while updating user info, error = ", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
