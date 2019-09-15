@@ -10,10 +10,13 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/GoIncremental/negroni-sessions/cookiestore"
+	"github.com/goincremental/negroni-sessions"
 	gmux "github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/negroni"
 	"github.com/yosssi/ace"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/gorp.v1"
 )
 
@@ -27,8 +30,14 @@ type Book struct {
 	ID             string `db:"id"`
 }
 
+type User struct {
+	Username string `db:"username"`
+	Secret   []byte `db:"secret"`
+}
+
 type Page struct {
 	Books []Book
+	User  string
 }
 
 type SearchResult struct {
@@ -53,6 +62,10 @@ type ClassifyBookResponse struct {
 	} `xml:"recommandations>ddc>mostPopular"`
 }
 
+type LoginPage struct {
+	Error string
+}
+
 var db *sql.DB
 var dbMap *gorp.DbMap
 
@@ -68,11 +81,45 @@ func initDB() (err error) {
 	}
 
 	dbMap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
+	dbMap.AddTableWithName(User{}, "users").SetKeys(false, "username")
 	err = dbMap.CreateTablesIfNotExists()
 	if err != nil {
 		return err
 	}
+
 	return nil
+}
+
+func getStringFromSession(r *http.Request, key string) (value string) {
+	val := sessions.GetSession(r).Get(key)
+	if val != nil {
+		value = val.(string)
+	}
+	return
+}
+
+func destroySession(r *http.Request) {
+	sessions.GetSession(r).Set("User", nil)
+	return
+}
+
+func verifyUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if r.URL.Path == "/login" {
+		log.Println("verifyUser :: path = /login")
+		next(w, r)
+		return
+	}
+
+	username := getStringFromSession(r, "User")
+	log.Println("verifyUser :: username = ", username)
+	user, _ := dbMap.Get(User{}, username)
+	if user != nil {
+		log.Println("verifyUser :: user found in session")
+		next(w, r)
+		return
+	}
+	log.Println("verifyUser :: user not found in session, redirecting to /login")
+	http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
 }
 
 func verifyDBConnection(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
@@ -106,6 +153,7 @@ func main() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		p := Page{
 			Books: []Book{},
+			User:  getStringFromSession(r, "User"),
 		}
 
 		_, err := dbMap.Select(&p.Books, "select * from books")
@@ -121,6 +169,83 @@ func main() {
 			return
 		}
 	}).Methods("GET")
+
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		login := r.FormValue("login")
+		signup := r.FormValue("signup")
+		log.Println("/login login = ", login, " signup = ", signup)
+
+		lp := LoginPage{""}
+
+		username := r.FormValue("username")
+		password := []byte(r.FormValue("password"))
+
+		log.Println("/login username = ", username)
+
+		if signup == "signup" {
+			secret, err := bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)
+			if err != nil {
+				log.Println("/login error while encrypting password, error  ", err.Error())
+				lp.Error = "Error while encrypting the password"
+			} else {
+				user := User{
+					Username: username,
+					Secret:   secret,
+				}
+				err = dbMap.Insert(&user)
+				if err != nil {
+					log.Println("/login Error while inserting user to database,  error = ", err.Error())
+					lp.Error = "Error while adding user to database"
+				} else {
+					log.Println("/login New user created, username = ", username)
+					sessions.GetSession(r).Set("User", user.Username)
+					http.Redirect(w, r, "/", http.StatusFound)
+					return
+				}
+			}
+
+		} else if login == "login" {
+			userInterface, err := dbMap.Get(User{}, username)
+			if err != nil || userInterface == nil {
+				log.Println("/login Error while retriving user info from database")
+				lp.Error = "Error while retriving user info from database"
+			} else {
+				user := userInterface.(*User)
+				err = bcrypt.CompareHashAndPassword(user.Secret, password)
+				if err != nil {
+					log.Println("/login Error while matching password, error = ", err.Error())
+					lp.Error = "Password match error , error = " + err.Error()
+				} else {
+					log.Println("/login user found, username = ", username)
+					sessions.GetSession(r).Set("User", user.Username)
+					http.Redirect(w, r, "/", http.StatusFound)
+					return
+				}
+			}
+		} else {
+		}
+
+		template, err := ace.Load("templates/login", "", nil)
+		if err != nil {
+			log.Println("/login error while loading the template, error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err = template.Execute(w, lp)
+		if err != nil {
+			log.Println("/login error while executing the template, error = ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	}).Methods("GET", "POST")
+
+	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		destroySession(r)
+		log.Println("/logout destroyed session, redirecting to /login")
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}).Methods("POST")
 
 	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.FormValue("queryString")
@@ -199,7 +324,9 @@ func main() {
 	}).Methods("DELETE")
 
 	n := negroni.Classic()
+	n.Use(sessions.Sessions("go-web-development", cookiestore.New([]byte("my-secret-123"))))
 	n.Use(negroni.HandlerFunc(verifyDBConnection))
+	n.Use(negroni.HandlerFunc(verifyUser))
 	n.UseHandler(mux)
 	n.Run(port)
 }
