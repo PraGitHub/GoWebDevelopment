@@ -22,7 +22,7 @@ import (
 	"gopkg.in/gorp.v1"
 )
 
-var port = ":8080"
+var port string
 
 type Book struct {
 	PK             int64  `db:"pk"`
@@ -451,7 +451,9 @@ func main() {
 	n.Use(negroni.HandlerFunc(verifyDBConnection))
 	n.Use(negroni.HandlerFunc(verifyUser))
 	n.UseHandler(mux)
-	n.Run(port)
+	
+	port = "8080"
+	n.Run(":" + port)
 }
 
 func search(query string) (results []SearchResult, err error) {
